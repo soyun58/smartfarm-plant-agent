@@ -14,9 +14,7 @@
 
 | 파일 | 역할 |
 |---|---|
-| `261009_arduino_sensors/` | 아두이노 센서 스케치 v0.1 (조도: CdS 아날로그) |
-| `261021_arduino_sensors_bh1750/` | 아두이노 센서 스케치 v0.2 (조도: BH1750, lux 단위) |
-| `261022_i2c_scan/` | 진단용 스케치 (시리얼 연결과 I2C 배선 확인) |
+| `261021_arduino_sensors_bh1750/` | 아두이노 센서 스케치 (조도: BH1750, lux 단위) |
 | `261009_pi_collector.py` | 라즈베리파이: 시리얼 값을 받아 1분 평균을 날짜별 CSV로 저장 |
 | `261021_pi_uploader.py` | 라즈베리파이: 아직 안 보낸 CSV 줄만 서버로 전송 |
 | `261021_api_server.py` | 데이터 수신·조회 API 서버 (FastAPI + SQLite) |
