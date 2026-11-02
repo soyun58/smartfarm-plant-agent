@@ -1,0 +1,94 @@
+라즈베리파이 자동 실행 설정 방법 (2026-10-12)
+================================================
+
+목적: 라즈베리파이를 켜면 센서 수집 프로그램이 자동으로 돌게 한다.
+      터미널을 닫아도 계속 돌고, 프로그램이 죽어도 다시 살아난다.
+
+전제: 261009_pi_collector.py 가 /home/pi/ 에 있어야 한다.
+      사용자 이름이 pi 가 아니면 아래 pi 를 본인 이름으로 바꾼다.
+      (사용자 이름은 whoami 로 확인)
+
+
+1. 손으로 돌리던 프로그램 멈추기
+--------------------------------
+실행 중인 터미널에서 Ctrl + C
+
+(포트는 한 번에 한 프로그램만 열 수 있다. 손으로 돌리는 것과
+ 자동 실행이 동시에 뜨면 둘 중 하나가 계속 실패한다.)
+
+
+2. 서비스 파일 만들기
+---------------------
+아래를 터미널에 통째로 붙여넣는다. (붙여넣기: Ctrl + Shift + V)
+
+sudo tee /etc/systemd/system/plant-collector.service > /dev/null <<'EOF'
+[Unit]
+Description=Plant sensor collector (Arduino -> CSV)
+After=multi-user.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi
+ExecStart=/usr/bin/python3 /home/pi/261009_pi_collector.py
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+
+3. 등록하고 시작하기
+--------------------
+sudo systemctl daemon-reload
+sudo systemctl enable --now plant-collector
+
+
+4. 잘 도는지 확인
+-----------------
+sudo systemctl status plant-collector
+
+  active (running) 이라고 초록색으로 나오면 성공.
+
+실시간 로그 보기 (빠져나올 때 Ctrl + C):
+journalctl -u plant-collector -f
+
+CSV 확인:
+tail -f ~/plant-data/sensors_$(date +%F).csv
+
+
+5. 재부팅해도 살아나는지 확인 (중요)
+------------------------------------
+sudo reboot
+
+다시 켜진 뒤 1~2분 기다렸다가:
+sudo systemctl status plant-collector
+tail -3 ~/plant-data/sensors_$(date +%F).csv
+
+
+자주 쓰는 명령
+==============
+멈추기          : sudo systemctl stop plant-collector
+다시 시작       : sudo systemctl restart plant-collector
+자동 실행 끄기  : sudo systemctl disable plant-collector
+로그 최근 50줄  : journalctl -u plant-collector -n 50
+
+
+문제가 생기면
+=============
+- status 에 빨간 글씨로 failed 가 보이면:
+    journalctl -u plant-collector -n 50
+  마지막 오류 메시지를 읽는다.
+
+- "시리얼 포트를 찾지 못했습니다" :
+    아두이노 USB 연결 확인. 5초마다 다시 시도하므로 꽂으면 알아서 붙는다.
+
+- "Permission denied" :
+    sudo usermod -aG dialout pi   실행 후 재부팅
+
+- 수집 프로그램 파일 경로를 바꿨다면:
+    서비스 파일의 ExecStart 경로도 같이 고치고
+    sudo systemctl daemon-reload
+    sudo systemctl restart plant-collector

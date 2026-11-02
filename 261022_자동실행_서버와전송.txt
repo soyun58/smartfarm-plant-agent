@@ -1,0 +1,139 @@
+서버 · 전송 자동 실행 설정 (2026-10-22)
+==========================================
+
+지금까지 등록된 것
+  plant-collector.service   센서 -> CSV 저장      (2026-10-12 등록)
+
+이번에 추가하는 것
+  plant-api.service         데이터 받는 서버 (FastAPI)
+  plant-uploader.service    CSV -> 서버 전송 (5분마다)
+
+왜 필요한가
+  지금은 터미널에서 직접 실행하고 있어서, 창을 닫거나 재부팅하면 멈춘다.
+  서비스로 등록하면 전원만 켜도 알아서 돌아간다.
+
+
+0. 손으로 띄워둔 서버 끄기
+--------------------------
+uvicorn 이 떠 있는 터미널에서 Ctrl + C
+
+(포트 8000 은 한 프로그램만 쓸 수 있다. 안 끄면 서비스가 뜨지 못한다.)
+
+
+1. 서버 서비스 등록
+-------------------
+아래를 터미널에 통째로 붙여넣는다. (붙여넣기: Ctrl + Shift + V)
+
+sudo tee /etc/systemd/system/plant-api.service > /dev/null <<'EOF'
+[Unit]
+Description=Plant sensor API server (FastAPI)
+After=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi
+ExecStart=/usr/bin/python3 -m uvicorn api_server:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+
+2. 전송 서비스 등록
+-------------------
+sudo tee /etc/systemd/system/plant-uploader.service > /dev/null <<'EOF'
+[Unit]
+Description=Plant sensor CSV uploader
+After=plant-api.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi
+ExecStart=/usr/bin/python3 /home/pi/261021_pi_uploader.py
+Restart=always
+RestartSec=30
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  (전송 프로그램은 그냥 실행하면 5분마다 보내는 반복 모드로 돈다)
+
+
+3. 등록하고 시작
+----------------
+sudo systemctl daemon-reload
+sudo systemctl enable --now plant-api plant-uploader
+
+
+4. 확인
+-------
+sudo systemctl status plant-api
+sudo systemctl status plant-uploader
+
+  둘 다 active (running) 이면 성공. 빠져나올 때 q
+
+서버가 살아있는지:
+curl http://localhost:8000/health
+
+데이터가 쌓이는지:
+curl http://localhost:8000/api/stats
+
+전송 기록 보기 (빠져나올 때 Ctrl + C):
+journalctl -u plant-uploader -f
+
+
+5. 재부팅해도 되는지 확인 (중요)
+--------------------------------
+sudo reboot
+
+2~3분 기다린 뒤:
+sudo systemctl status plant-collector plant-api plant-uploader
+curl http://localhost:8000/api/latest
+
+  방금 시각의 데이터가 나오면 완성이다.
+
+
+전체 구조
+=========
+  [아두이노] --USB--> [plant-collector] --> CSV 파일
+                                             |
+                                        [plant-uploader] (5분마다)
+                                             |
+                                        [plant-api] --> plant_data.db
+                                             |
+                                        웹 화면 / 챗봇이 조회
+
+
+자주 쓰는 명령
+==============
+전체 상태     : sudo systemctl status plant-collector plant-api plant-uploader
+멈추기        : sudo systemctl stop plant-uploader
+다시 시작     : sudo systemctl restart plant-api
+자동 실행 끄기: sudo systemctl disable plant-uploader
+로그 50줄     : journalctl -u plant-uploader -n 50
+
+
+문제가 생기면
+=============
+- plant-api 가 failed :
+    journalctl -u plant-api -n 30
+    "Address already in use" 면 손으로 띄운 uvicorn 이 아직 살아있는 것.
+    Ctrl+C 로 끄거나:  pkill -f "uvicorn api_server"
+
+- plant-uploader 가 계속 "서버에 연결하지 못했습니다" :
+    plant-api 가 떠 있는지 확인. curl http://localhost:8000/health
+
+- 데이터가 중복될까 걱정되면 :
+    서버가 (device_id, time) 으로 덮어쓰기 때문에 같은 데이터를 여러 번 보내도
+    줄이 늘어나지 않는다. 안심하고 다시 보내도 된다.
+
+- 조원 서버로 바꿀 때 :
+    nano ~/261021_pi_uploader.py  에서 API_URL 을 조원 주소로 바꾸고
+    sudo systemctl restart plant-uploader
